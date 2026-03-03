@@ -21,3 +21,8 @@ A simple Python tool to help you find and delete all hidden files, caches, and s
 - macOS (tested on Sonoma)
 - Python 3.x
 - `sudo` access (to remove system-level files)
+
+---
+
+## Credits & Disclaimer
+> **Note:** This tool's initial logic and safety checks were drafted with the assistance of AI (Gemini CLI). While it has been tested for safety, always review the list of files found before confirming deletion.
