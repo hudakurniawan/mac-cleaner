@@ -109,9 +109,16 @@ def delete_items(items):
 
 
 def main():
-    if len(sys.argv) < 2:
+    if len(sys.argv) < 2 or sys.argv[1] in ["--help", "-h"]:
         print("Usage: python3 cleaner.py <app_name>")
-        sys.exit(1)
+        print("\nOptions:")
+        print("  -h, --help     Show this help message")
+        print("  --version      Show version information")
+        sys.exit(0)
+
+    if sys.argv[1] == "--version":
+        print("macOS Deep Cleaner v1.0.0")
+        sys.exit(0)
 
     app_name = sys.argv[1]
     print(f"=== macOS Deep Cleaner: {app_name} ===\n")

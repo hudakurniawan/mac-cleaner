@@ -29,5 +29,6 @@ jobs:
         
     - name: Basic Smoke Test
       run: |
-        # Just check if the help/usage command works
-        python cleaner.py --help || python cleaner.py
+        # Just check if the version command works
+        python3 cleaner.py --version
+
