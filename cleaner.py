@@ -79,19 +79,20 @@ def find_files(app_name):
     # Try to find the bundle ID of the app
     app_paths = run_command(f"mdfind 'kind:app {app_name}'").split("\n")
     for app_path in app_paths:
-        if app_path and os.path.exists(app_path):
+        if app_path and os.path.exists(app_path) and app_name.lower() in os.path.basename(app_path).lower():
             bid = run_command(f"mdls -name kMDItemCFBundleIdentifier -raw \"{app_path}\"")
             if bid and "(null)" not in bid:
                 search_terms.add(bid.lower())
-                # Add descriptive parts of bundle ID (e.g., 'easya' from 'io.easya.easya')
+                # Add descriptive parts of bundle ID (e.g., 'wireguard' from 'com.wireguard.macos')
                 for part in bid.split("."):
-                    if len(part) > 3:
+                    if len(part) > 3 and part.lower() not in ["com", "apple", "macos", "iosmac", "apps"]:
                         search_terms.add(part.lower())
 
     # 2. Spotlight Search (Powerful discovery)
     print(f"[*] Searching Spotlight for related files...")
     for term in search_terms:
-        spotlight_results = run_command(f"mdfind \"{term}\"")
+        # Use more targeted mdfind -name query
+        spotlight_results = run_command(f"mdfind -name \"{term}\"")
         if spotlight_results:
             for item in spotlight_results.split("\n"):
                 if item:
@@ -199,65 +200,69 @@ def main():
         if confirm_kill.lower() == 'y':
             run_command(f"pkill -if '{app_name}'", use_sudo=True)
 
-    grouped_files = find_files(app_name)
-    if not grouped_files:
-        print(f"\n[!] No files found for '{app_name}'.")
-        return
-
     while True:
-        print("\n[+] Found items grouped by category:")
-        categories = list(grouped_files.keys())
-        for i, cat in enumerate(categories):
-            count = len(grouped_files[cat])
-            print(f"    {i+1}. {cat} ({count} items)")
-
-        print("\nOptions:")
-        print("  'y' or 'a'   : Delete ALL items listed above")
-        print("  'n'          : Cancel")
-        print("  '1,3'        : Delete specific categories (e.g., 1 and 3 only)")
-        print("  'view 1'     : View detailed list of files in category 1")
-        
-        choice = input("\n[?] Your choice: ").strip().lower()
-
-        to_delete = []
-        
-        if choice in ['y', 'a']:
-            for cat_files in grouped_files.values():
-                to_delete.extend(cat_files)
-            break
-        elif choice.startswith('view '):
-            try:
-                idx = int(choice.split(' ')[1]) - 1
-                cat = categories[idx]
-                print(f"\n--- Detail: {cat} ---")
-                for item in grouped_files[cat]:
-                    print(f"  - {item}")
-                input("\nPress Enter to return to menu...")
-                continue
-            except (IndexError, ValueError):
-                print("[!] Invalid category selection.")
-                continue
-        elif ',' in choice or choice.isdigit():
-            try:
-                indices = [int(x.strip()) - 1 for x in choice.split(',')]
-                for idx in indices:
-                    cat = categories[idx]
-                    to_delete.extend(grouped_files[cat])
-                break
-            except (IndexError, ValueError):
-                print("[!] Invalid category selection.")
-                continue
-        elif choice == 'n':
-            print("\n[!] Operation cancelled.")
+        grouped_files = find_files(app_name)
+        if not grouped_files:
+            print(f"\n[✓] No remaining files found for '{app_name}'.")
             return
-        else:
-            print("\n[!] Invalid input. Use 'y', 'n', 'view #', or '1,2'.")
-            continue
 
-    if to_delete:
-        print(f"\n[!] Deleting {len(to_delete)} items... (Sudo password may be required)")
-        delete_items(to_delete)
-        print("\n[✓] Cleanup complete.")
+        while True:
+            print("\n[+] Found items grouped by category:")
+            categories = list(grouped_files.keys())
+            for i, cat in enumerate(categories):
+                count = len(grouped_files[cat])
+                print(f"    {i+1}. {cat} ({count} items)")
+
+            print("\nOptions:")
+            print("  'y' or 'a'   : Delete ALL items listed above")
+            print("  'n'          : Finish / Exit")
+            print("  '1,3'        : Delete specific categories (e.g., 1 and 3 only)")
+            print("  'view 1'     : View detailed list of files in category 1")
+            
+            choice = input("\n[?] Your choice: ").strip().lower()
+
+            to_delete = []
+            
+            if choice in ['y', 'a']:
+                for cat_files in grouped_files.values():
+                    to_delete.extend(cat_files)
+                if to_delete:
+                    print(f"\n[!] Deleting {len(to_delete)} items... (Sudo password may be required)")
+                    delete_items(to_delete)
+                return # Exit after deleting all
+            elif choice.startswith('view '):
+                try:
+                    idx = int(choice.split(' ')[1]) - 1
+                    cat = categories[idx]
+                    print(f"\n--- Detail: {cat} ---")
+                    for item in grouped_files[cat]:
+                        print(f"  - {item}")
+                    input("\nPress Enter to return to menu...")
+                    continue
+                except (IndexError, ValueError):
+                    print("[!] Invalid category selection.")
+                    continue
+            elif ',' in choice or choice.isdigit():
+                try:
+                    indices = [int(x.strip()) - 1 for x in choice.split(',')]
+                    for idx in indices:
+                        cat = categories[idx]
+                        to_delete.extend(grouped_files[cat])
+                    
+                    if to_delete:
+                        print(f"\n[!] Deleting {len(to_delete)} items from selected categories...")
+                        delete_items(to_delete)
+                        print("\n[✓] Selected categories cleaned.")
+                        break # Break inner loop to re-scan
+                except (IndexError, ValueError):
+                    print("[!] Invalid category selection.")
+                    continue
+            elif choice == 'n':
+                print("\n[!] Exiting.")
+                return
+            else:
+                print("\n[!] Invalid input. Use 'y', 'n', 'view #', or '1,2'.")
+                continue
 
 if __name__ == "__main__":
     main()
