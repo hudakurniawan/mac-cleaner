@@ -1,8 +1,21 @@
 import os
 import sys
 import subprocess
+from pathlib import Path
 
-# Common macOS Library and Cache paths
+# Version
+VERSION = "1.2.0"
+
+# Categories mapping for better UX
+CATEGORY_MAP = {
+    "Applications": ["/Applications"],
+    "Preferences": ["/Library/Preferences", "~/Library/Preferences"],
+    "Application Support": ["/Library/Application Support", "~/Library/Application Support"],
+    "Caches & Logs": ["/Library/Caches", "~/Library/Caches", "/Library/Logs", "~/Library/Logs"],
+    "Containers & State": ["~/Library/Containers", "~/Library/Group Containers", "~/Library/Saved Application State"],
+    "System Components": ["/Library/LaunchAgents", "/Library/LaunchDaemons", "/Library/PrivilegedHelperTools", "/Library/Audio/Plug-Ins", "/Library/CoreMediaIO/Plug-Ins"],
+}
+
 SEARCH_PATHS = [
     "~/Library/Application Support",
     "~/Library/Caches",
@@ -20,9 +33,8 @@ SEARCH_PATHS = [
     "/Library/PrivilegedHelperTools",
     "/Library/Audio/Plug-Ins/HAL",
     "/Library/CoreMediaIO/Plug-Ins/DAL",
-    "/Applications",
+    "/Applications"
 ]
-
 
 def run_command(command, use_sudo=False):
     """Executes a shell command and returns the output."""
@@ -34,63 +46,124 @@ def run_command(command, use_sudo=False):
     except Exception as e:
         return f"Error: {e}"
 
+def get_category_name(path):
+    """Determines the category of a given path."""
+    for cat, prefixes in CATEGORY_MAP.items():
+        for prefix in prefixes:
+            expanded = os.path.expanduser(prefix)
+            if path.startswith(expanded):
+                return cat
+    return "Other"
+
+import re
+
+def is_precise_match(path, search_terms):
+    """Checks if any search term matches precisely in the path."""
+    path_lower = path.lower()
+    for term in search_terms:
+        # Use regex to find term as a whole word or surrounded by common separators
+        pattern = rf"(^|[._\-/]){re.escape(term)}([._\-/]|$)"
+        if re.search(pattern, path_lower):
+            return True
+    return False
 
 def find_files(app_name):
-    """Searches for files and folders related to the app name."""
-    found_items = set()
+    """Searches and groups files into categories."""
+    grouped_items = {cat: set() for cat in CATEGORY_MAP.keys()}
+    grouped_items["Other"] = set()
+    grouped_items["Package Receipts"] = set()
+    
+    # 1. Expand search terms (App Name + Bundle ID)
+    search_terms = {app_name.lower()}
+    
+    # Try to find the bundle ID of the app
+    app_paths = run_command(f"mdfind 'kind:app {app_name}'").split("\n")
+    for app_path in app_paths:
+        if app_path and os.path.exists(app_path):
+            bid = run_command(f"mdls -name kMDItemCFBundleIdentifier -raw \"{app_path}\"")
+            if bid and "(null)" not in bid:
+                search_terms.add(bid.lower())
+                # Add descriptive parts of bundle ID (e.g., 'easya' from 'io.easya.easya')
+                for part in bid.split("."):
+                    if len(part) > 3:
+                        search_terms.add(part.lower())
 
-    # 1. Use Spotlight (mdfind) for quick discovery
-    print(f"[*] Searching Spotlight for '{app_name}'...")
-    spotlight_results = run_command(f"mdfind -name '{app_name}'")
-    if spotlight_results:
-        for item in spotlight_results.split("\n"):
-            if item:
-                found_items.add(item)
+    # 2. Spotlight Search (Powerful discovery)
+    print(f"[*] Searching Spotlight for related files...")
+    for term in search_terms:
+        spotlight_results = run_command(f"mdfind \"{term}\"")
+        if spotlight_results:
+            for item in spotlight_results.split("\n"):
+                if item:
+                    # Ignore common noise directories
+                    if any(x in item for x in ["/Extensions/", "/BrowserMetrics/", "/Service Worker/"]):
+                        continue
+                    
+                    if is_precise_match(item, search_terms):
+                        if any(os.path.expanduser(p) in item for p in SEARCH_PATHS) or item.endswith(".app"):
+                            cat = get_category_name(item)
+                            grouped_items[cat].add(item)
 
-    # 2. Search common Library paths manually
+    # 3. Manual Deep Scan (Catch things Spotlight misses)
     print("[*] Scanning standard Library paths...")
     for path_str in SEARCH_PATHS:
         expanded_path = os.path.expanduser(path_str)
         if not os.path.exists(expanded_path):
             continue
-
-        # Search for files matching the app name in these directories
+            
         try:
-            for item in os.listdir(expanded_path):
-                if app_name.lower() in item.lower():
-                    found_items.add(os.path.join(expanded_path, item))
+            # Recursive search
+            is_container_path = any(x in path_str for x in ["Containers", "Group Containers"])
+            max_depth = 10 if is_container_path else 2
+            
+            for root, dirs, files in os.walk(expanded_path):
+                depth = root.count(os.sep) - expanded_path.count(os.sep)
+                if depth > max_depth:
+                    continue
+                
+                # Check directories
+                for d in dirs:
+                    if is_precise_match(d, search_terms):
+                        full_path = os.path.join(root, d)
+                        # Ignore noise
+                        if any(x in full_path for x in ["/Extensions/", "/BrowserMetrics/"]):
+                            continue
+                        cat = get_category_name(full_path)
+                        grouped_items[cat].add(full_path)
+                
+                # Check files (for .plist etc)
+                for f in files:
+                    if is_precise_match(f, search_terms):
+                        full_path = os.path.join(root, f)
+                        # Ignore noise
+                        if any(x in full_path for x in ["/Extensions/", "/BrowserMetrics/"]):
+                            continue
+                        cat = get_category_name(full_path)
+                        grouped_items[cat].add(full_path)
         except PermissionError:
-            # We'll skip directories we can't read without sudo for now
             pass
-
-    # 3. Check for Package Receipts (pkgutil)
+            
+    # 3. Package Receipts
     print("[*] Checking for installation receipts...")
     pkg_results = run_command(f"pkgutil --packages | grep -i '{app_name}'")
     if pkg_results:
         for pkg_id in pkg_results.split("\n"):
             if pkg_id:
-                print(f"    [!] Found package receipt: {pkg_id}")
-                # We won't list every file in the package to avoid clutter,
-                # but we'll mark the package for deletion.
-                found_items.add(f"PACKAGE_RECEIPT:{pkg_id}")
+                grouped_items["Package Receipts"].add(f"PACKAGE_RECEIPT:{pkg_id}")
 
-    return sorted(list(found_items))
-
+    # Remove empty categories
+    return {k: sorted(list(v)) for k, v in grouped_items.items() if v}
 
 def check_processes(app_name):
     """Checks for running processes related to the app name."""
     print("[*] Checking for active processes...")
-    # Exclude the current PID and common shell patterns
     current_pid = os.getpid()
-    ps_results = run_command(
-        f"ps aux | grep -i '{app_name}' | grep -v grep | grep -v '{current_pid}'"
-    )
+    ps_results = run_command(f"ps aux | grep -i '{app_name}' | grep -v grep | grep -v '{current_pid}'")
     if ps_results:
         print("\n[!] WARNING: Active processes found:")
         print(ps_results)
         return True
     return False
-
 
 def delete_items(items):
     """Deletes the confirmed items."""
@@ -102,11 +175,9 @@ def delete_items(items):
                 run_command(f"pkgutil --forget {pkg_id}", use_sudo=True)
             else:
                 print(f"[-] Deleting: {item}")
-                # Use sudo rm -rf for everything to ensure cleanup of restricted files/folders
-                run_command(f'rm -rf "{item}"', use_sudo=True)
+                run_command(f"rm -rf \"{item}\"", use_sudo=True)
         except Exception as e:
             print(f"    [X] Error deleting {item}: {e}")
-
 
 def main():
     if len(sys.argv) < 2 or sys.argv[1] in ["--help", "-h"]:
@@ -117,40 +188,76 @@ def main():
         sys.exit(0)
 
     if sys.argv[1] == "--version":
-        print("macOS Deep Cleaner v1.0.0")
+        print(f"macOS Deep Cleaner v{VERSION}")
         sys.exit(0)
 
     app_name = sys.argv[1]
     print(f"=== macOS Deep Cleaner: {app_name} ===\n")
 
-    # Check for active processes
-    has_active_processes = check_processes(app_name)
-    if has_active_processes:
+    if check_processes(app_name):
         confirm_kill = input("\n[?] Should I try to kill these processes? (y/n): ")
-        if confirm_kill.lower() == "y":
+        if confirm_kill.lower() == 'y':
             run_command(f"pkill -if '{app_name}'", use_sudo=True)
 
-    # Find related files
-    found_items = find_files(app_name)
-
-    if not found_items:
+    grouped_files = find_files(app_name)
+    if not grouped_files:
         print(f"\n[!] No files found for '{app_name}'.")
         return
 
-    print(f"\n[+] Found {len(found_items)} items:")
-    for i, item in enumerate(found_items):
-        print(f"    {i + 1}. {item}")
+    while True:
+        print("\n[+] Found items grouped by category:")
+        categories = list(grouped_files.keys())
+        for i, cat in enumerate(categories):
+            count = len(grouped_files[cat])
+            print(f"    {i+1}. {cat} ({count} items)")
 
-    # Ask for confirmation
-    confirm = input("\n[?] Do you want to delete all listed items? (y/n): ")
-    if confirm.lower() == "y":
-        # Final safety check for sensitive paths
-        print("\n[!] DELETING FILES... (You may be asked for your sudo password)")
-        delete_items(found_items)
+        print("\nOptions:")
+        print("  'y' or 'a'   : Delete ALL items listed above")
+        print("  'n'          : Cancel")
+        print("  '1,3'        : Delete specific categories (e.g., 1 and 3 only)")
+        print("  'view 1'     : View detailed list of files in category 1")
+        
+        choice = input("\n[?] Your choice: ").strip().lower()
+
+        to_delete = []
+        
+        if choice in ['y', 'a']:
+            for cat_files in grouped_files.values():
+                to_delete.extend(cat_files)
+            break
+        elif choice.startswith('view '):
+            try:
+                idx = int(choice.split(' ')[1]) - 1
+                cat = categories[idx]
+                print(f"\n--- Detail: {cat} ---")
+                for item in grouped_files[cat]:
+                    print(f"  - {item}")
+                input("\nPress Enter to return to menu...")
+                continue
+            except (IndexError, ValueError):
+                print("[!] Invalid category selection.")
+                continue
+        elif ',' in choice or choice.isdigit():
+            try:
+                indices = [int(x.strip()) - 1 for x in choice.split(',')]
+                for idx in indices:
+                    cat = categories[idx]
+                    to_delete.extend(grouped_files[cat])
+                break
+            except (IndexError, ValueError):
+                print("[!] Invalid category selection.")
+                continue
+        elif choice == 'n':
+            print("\n[!] Operation cancelled.")
+            return
+        else:
+            print("\n[!] Invalid input. Use 'y', 'n', 'view #', or '1,2'.")
+            continue
+
+    if to_delete:
+        print(f"\n[!] Deleting {len(to_delete)} items... (Sudo password may be required)")
+        delete_items(to_delete)
         print("\n[✓] Cleanup complete.")
-    else:
-        print("\n[!] Operation cancelled.")
-
 
 if __name__ == "__main__":
     main()
