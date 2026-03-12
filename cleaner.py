@@ -5,7 +5,7 @@ import re
 import curses
 
 # Version
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 
 # Generic terms to ignore when extracting from bundle IDs
 BLACKLIST_TERMS = [
@@ -80,8 +80,13 @@ def run_command(command, use_sudo=False):
     if use_sudo:
         command = f"sudo {command}"
     try:
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
-        return result.stdout.strip()
+        # If using sudo, we don't capture output to allow password prompt in terminal
+        if use_sudo:
+            result = subprocess.run(command, shell=True)
+            return "" if result.returncode == 0 else f"Error: {result.returncode}"
+        else:
+            result = subprocess.run(command, shell=True, capture_output=True, text=True)
+            return result.stdout.strip()
     except Exception as e:
         return f"Error: {e}"
 
@@ -129,19 +134,29 @@ def is_precise_match(path, search_terms):
                 "library/caches",
                 "library/containers",
             ]
-            for root in lib_roots:
-                if path_lower.endswith(root + "/" + term):
-                    return True
-                # Check if it's a direct child (e.g., ~/Library/Application Support/term)
-                parts = path_lower.split("/")
-                if (
-                    len(parts) >= 2
-                    and parts[-2] in root.split("/")
-                    and parts[-1] == term
-                ):
-                    return True
 
-            return True
+            is_in_lib_root = False
+            for root in lib_roots:
+                if root in path_lower:
+                    is_in_lib_root = True
+                    # Check if it's a direct child (e.g., ~/Library/Application Support/term)
+                    parts = path_lower.split("/")
+                    # We look for the root folder name in the path
+                    root_parts = root.split("/")
+                    last_root_part = root_parts[-1]
+
+                    if last_root_part in parts:
+                        root_idx = parts.index(last_root_part)
+                        # If the term is the very next part after the root, it MUST match exactly
+                        if len(parts) > root_idx + 1 and parts[root_idx + 1] == term:
+                            return True
+                        # If there are more parts after, it's a sub-file/folder, which is fine
+                        if len(parts) > root_idx + 1:
+                            continue
+
+            # If it's not in a protected lib root, or passed the check
+            if not is_in_lib_root:
+                return True
     return False
 
 
