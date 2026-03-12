@@ -2,13 +2,14 @@ import os
 import sys
 import subprocess
 import re
+import curses
 
 # Version
-VERSION = "1.2.1"
+VERSION = "1.2.2"
 
 # Categories mapping for better UX
 CATEGORY_MAP = {
-    "Applications": ["/Applications"],
+    "Applications": ["/Applications", "/System/Applications", "~/Applications"],
     "Preferences": ["/Library/Preferences", "~/Library/Preferences"],
     "Application Support": [
         "/Library/Application Support",
@@ -235,19 +236,97 @@ def delete_items(items):
             print(f"    [X] Error deleting {item}: {e}")
 
 
+def get_apps():
+    """Gets list of apps from standard application folders."""
+    apps = set()
+    dirs = ["/Applications", "/System/Applications", "~/Applications"]
+    for d in dirs:
+        expanded = os.path.expanduser(d)
+        if os.path.exists(expanded):
+            for item in os.listdir(expanded):
+                if item.endswith(".app"):
+                    apps.add(item.replace(".app", ""))
+    return sorted(list(apps))
+
+
+def app_selector(stdscr, apps):
+    """Interactive curses selector for apps."""
+    # Set up colors
+    curses.curs_set(0)  # Hide cursor
+    curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_CYAN)  # Highlight color
+
+    current_row = 0
+    while True:
+        stdscr.clear()
+        h, w = stdscr.getmaxyx()
+
+        title = (
+            "=== Select an App to Clean (Use Arrows, Enter to Select, 'q' to Quit) ==="
+        )
+        stdscr.addstr(0, 0, title[: w - 1], curses.A_BOLD)
+
+        # Display only what fits on the screen
+        visible_rows = h - 2
+        offset = max(0, current_row - visible_rows // 2)
+
+        for i in range(visible_rows):
+            idx = offset + i
+            if idx >= len(apps):
+                break
+
+            y = i + 1
+            text = f"  {apps[idx]}"
+
+            if idx == current_row:
+                stdscr.attron(curses.color_pair(1))
+                stdscr.addstr(y, 0, text.ljust(w - 1)[: w - 1])
+                stdscr.attroff(curses.color_pair(1))
+            else:
+                stdscr.addstr(y, 0, text[: w - 1])
+
+        stdscr.refresh()
+        key = stdscr.getch()
+
+        if key == curses.KEY_UP and current_row > 0:
+            current_row -= 1
+        elif key == curses.KEY_DOWN and current_row < len(apps) - 1:
+            current_row += 1
+        elif key == ord("\n") or key == curses.KEY_ENTER:
+            return apps[current_row]
+        elif key == ord("q"):
+            return None
+
+
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] in ["--help", "-h"]:
-        print("Usage: python3 cleaner.py <app_name>")
+    if len(sys.argv) < 2:
+        apps = get_apps()
+        if not apps:
+            print("[!] No applications found in standard locations.")
+            sys.exit(1)
+
+        try:
+            app_name = curses.wrapper(app_selector, apps)
+            if not app_name:
+                print("\n[!] Selection cancelled.")
+                sys.exit(0)
+        except curses.error:
+            print(
+                "[!] Could not initialize interactive selector (unsupported terminal)."
+            )
+            print("Usage: python3 cleaner.py <app_name>")
+            sys.exit(1)
+    elif sys.argv[1] in ["--help", "-h"]:
+        print("Usage: python3 cleaner.py [app_name]")
+        print("\nIf [app_name] is omitted, an interactive selector will appear.")
         print("\nOptions:")
         print("  -h, --help     Show this help message")
         print("  --version      Show version information")
         sys.exit(0)
-
-    if sys.argv[1] == "--version":
+    elif sys.argv[1] == "--version":
         print(f"macOS Deep Cleaner v{VERSION}")
         sys.exit(0)
-
-    app_name = sys.argv[1]
+    else:
+        app_name = sys.argv[1]
 
     if len(app_name) < 3:
         print(f"[!] WARNING: '{app_name}' is a very short search term.")
