@@ -5,7 +5,26 @@ import re
 import curses
 
 # Version
-VERSION = "1.2.2"
+VERSION = "1.3.0"
+
+# Generic terms to ignore when extracting from bundle IDs
+BLACKLIST_TERMS = [
+    "com",
+    "apple",
+    "macos",
+    "iosmac",
+    "apps",
+    "helper",
+    "service",
+    "agent",
+    "extension",
+    "plugin",
+    "mobile",
+    "desktop",
+    "framework",
+    "backend",
+    "frontend",
+]
 
 # Categories mapping for better UX
 CATEGORY_MAP = {
@@ -101,6 +120,27 @@ def is_precise_match(path, search_terms):
         # Includes / for path boundaries and \s for multi-word app names
         pattern = rf"(^|[._\-\s/]){re.escape(term)}([._\-\s/]|$)"
         if re.search(pattern, path_lower):
+            # ADDITIONAL SAFETY: If the folder is a direct child of a Library path,
+            # we require an EXACT match to avoid deleting shared vendor folders.
+            # (e.g., match 'com.apple.Safari' but not just 'apple' in '~/Library/Application Support/apple')
+            lib_roots = [
+                "library/application support",
+                "library/preferences",
+                "library/caches",
+                "library/containers",
+            ]
+            for root in lib_roots:
+                if path_lower.endswith(root + "/" + term):
+                    return True
+                # Check if it's a direct child (e.g., ~/Library/Application Support/term)
+                parts = path_lower.split("/")
+                if (
+                    len(parts) >= 2
+                    and parts[-2] in root.split("/")
+                    and parts[-1] == term
+                ):
+                    return True
+
             return True
     return False
 
@@ -128,17 +168,16 @@ def find_files(app_name):
         ):
             bid = run_command(f'mdls -name kMDItemCFBundleIdentifier -raw "{app_path}"')
             if bid and "(null)" not in bid:
+                # Rule A: Keep the full Bundle ID (Safe and precise)
                 search_terms.add(bid.lower())
-                # Add descriptive parts of bundle ID (e.g., 'wireguard' from 'com.wireguard.macos')
-                for part in bid.split("."):
-                    if len(part) > 3 and part.lower() not in [
-                        "com",
-                        "apple",
-                        "macos",
-                        "iosmac",
-                        "apps",
-                    ]:
-                        search_terms.add(part.lower())
+
+                # Rule B: Only extract the 'Tail' (last part) of the bundle ID.
+                # Avoids middle segments which are usually the developer/vendor name.
+                parts = bid.split(".")
+                if len(parts) > 1:
+                    tail = parts[-1].lower()
+                    if len(tail) > 3 and tail not in BLACKLIST_TERMS:
+                        search_terms.add(tail)
 
     # 2. Spotlight Search (Powerful discovery)
     print("[*] Searching Spotlight for related files...")
@@ -237,19 +276,43 @@ def check_processes(app_name):
     return False
 
 
+def trash_item(item_path):
+    """Moves an item to the macOS Trash using AppleScript."""
+    # Escape single quotes for AppleScript
+    escaped_path = item_path.replace("'", "\\'")
+    applescript = f'tell application "Finder" to delete POSIX file "{escaped_path}"'
+    try:
+        # Run osascript to move to trash
+        subprocess.run(
+            ["osascript", "-e", applescript], capture_output=True, check=True
+        )
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
 def delete_items(items):
-    """Deletes the confirmed items."""
+    """Deletes the confirmed items (moves to Trash if possible)."""
+    user_home = os.path.expanduser("~")
     for item in items:
         try:
             if item.startswith("PACKAGE_RECEIPT:"):
                 pkg_id = item.split(":")[1]
                 print(f"[-] Forgetting package receipt: {pkg_id}")
                 run_command(f"pkgutil --forget {pkg_id}", use_sudo=True)
+            elif item.startswith(user_home):
+                # For user-owned files, move to Trash
+                print(f"[>] Moving to Trash: {item}")
+                if not trash_item(item):
+                    # Fallback if AppleScript fails
+                    print("    [!] Trash failed, using sudo rm -rf...")
+                    run_command(f'rm -rf "{item}"', use_sudo=True)
             else:
-                print(f"[-] Deleting: {item}")
+                # System-level files (not in ~/) usually require sudo and can't be Trashed easily
+                print(f"[-] Deleting (PERMANENT): {item}")
                 run_command(f'rm -rf "{item}"', use_sudo=True)
         except Exception as e:
-            print(f"    [X] Error deleting {item}: {e}")
+            print(f"    [X] Error handling {item}: {e}")
 
 
 def get_apps():
