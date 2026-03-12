@@ -80,6 +80,22 @@ def get_category_name(path):
 def is_precise_match(path, search_terms):
     """Checks if any search term matches precisely in the path."""
     path_lower = path.lower()
+
+    # CRITICAL SAFETY: Never match files in personal data or cloud storage folders
+    # to prevent accidental deletion of user documents/backups.
+    ignored_patterns = [
+        "/onedrive",
+        "/dropbox",
+        "/google drive",
+        "/icloud",
+        "/documents/",
+        "/desktop/",
+        "/downloads/",
+        "/pictures/",
+    ]
+    if any(pattern in path_lower for pattern in ignored_patterns):
+        return False
+
     for term in search_terms:
         # Use regex to find term as a whole word or surrounded by common separators
         # Includes / for path boundaries and \s for multi-word app names
