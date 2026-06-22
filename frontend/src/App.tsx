@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import './App.css'
 import SpaceLens from './components/SpaceLens'
+import AIAdvisor from './components/AIAdvisor'
 
 function App() {
   return (
@@ -12,8 +13,9 @@ function App() {
         <p style={{ opacity: 0.8 }}>Premium macOS Optimization Suite</p>
       </header>
 
-      <main style={{ maxWidth: '1200px', margin: '0 auto' }}>
+      <main style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '30px' }}>
         <SpaceLens />
+        <AIAdvisor />
       </main>
     </div>
   )
