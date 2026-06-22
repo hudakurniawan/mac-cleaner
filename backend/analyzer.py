@@ -33,6 +33,8 @@ async def get_dir_size_ws(websocket: WebSocket, start_path: str):
                                 await websocket.send_json({"type": "progress", "scanned_bytes": total_size})
                                 await asyncio.sleep(0) # Yield control
                                 
+                            children.append({"name": entry.name, "path": entry.path, "value": size, "children": []})
+                                
                         elif entry.is_dir(follow_symlinks=False):
                             # Skip protected/unreadable paths
                             if not os.access(entry.path, os.R_OK):
