@@ -5,6 +5,8 @@ const SpaceLens: React.FC = () => {
   const [data, setData] = useState<any>(null);
   const [status, setStatus] = useState<string>('Idle');
   const [scannedBytes, setScannedBytes] = useState<number>(0);
+  const [scanPath, setScanPath] = useState<string>('~/Documents');
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const ws = useRef<WebSocket | null>(null);
 
   const startScan = () => {
@@ -20,8 +22,8 @@ const SpaceLens: React.FC = () => {
     ws.current = new WebSocket(wsUrl);
 
     ws.current.onopen = () => {
-      setStatus('Connected, starting scan...');
-      ws.current?.send(JSON.stringify({ path: '~/Documents' })); // Scan Documents by default for safety/speed demo
+      setStatus(`Connected, starting scan on ${scanPath}...`);
+      ws.current?.send(JSON.stringify({ path: scanPath }));
     };
 
     ws.current.onmessage = (event) => {
@@ -91,15 +93,68 @@ const SpaceLens: React.FC = () => {
     }
   };
 
+  const onChartClick = (params: any) => {
+    if (params.data && params.data.path) {
+      setSelectedPath(params.data.path);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedPath) return;
+    if (!window.confirm(`Are you sure you want to delete this folder?\n\n${selectedPath}`)) return;
+    
+    try {
+      setStatus(`Deleting ${selectedPath}...`);
+      const response = await fetch('/api/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: [selectedPath] })
+      });
+      const result = await response.json();
+      if (result.status === 'success') {
+        setStatus(`Successfully deleted ${selectedPath}. Re-run scan to update view.`);
+        setSelectedPath(null);
+      } else {
+        setStatus(`Deletion failed: ${result.message}`);
+      }
+    } catch (e: any) {
+      setStatus(`Deletion error: ${e.message}`);
+    }
+  };
+
   return (
     <div className="space-lens-container" style={{ padding: '20px', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '12px', backdropFilter: 'blur(10px)' }}>
       <h2>Space Lens (Disk Analyzer)</h2>
-      <button 
-        onClick={startScan}
-        style={{ padding: '10px 20px', borderRadius: '8px', background: '#3b82f6', color: 'white', border: 'none', cursor: 'pointer', marginBottom: '20px' }}
-      >
-        Start Scan (~/Documents)
-      </button>
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+        <input 
+          type="text" 
+          value={scanPath}
+          onChange={(e) => setScanPath(e.target.value)}
+          placeholder="Path to scan (e.g., ~/Downloads or /Applications)"
+          style={{ flex: 1, padding: '10px', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}
+        />
+        <button 
+          onClick={startScan}
+          style={{ padding: '10px 20px', borderRadius: '8px', background: '#3b82f6', color: 'white', border: 'none', cursor: 'pointer' }}
+        >
+          Start Scan
+        </button>
+      </div>
+
+      {selectedPath && (
+        <div style={{ marginBottom: '20px', padding: '15px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <strong style={{ color: '#ef4444' }}>Selected target:</strong> <br/>
+            <code style={{ fontSize: '0.9em' }}>{selectedPath}</code>
+          </div>
+          <button 
+            onClick={handleDelete}
+            style={{ padding: '10px 20px', borderRadius: '8px', background: '#ef4444', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
+          >
+            Move to Trash
+          </button>
+        </div>
+      )}
       
       <div className="status-bar" style={{ marginBottom: '20px' }}>
         <p><strong>Status:</strong> {status}</p>
@@ -108,7 +163,11 @@ const SpaceLens: React.FC = () => {
 
       {data && (
         <div style={{ height: '600px', width: '100%' }}>
-          <ReactECharts option={option} style={{ height: '100%', width: '100%' }} />
+          <ReactECharts 
+            option={option} 
+            style={{ height: '100%', width: '100%' }} 
+            onEvents={{ 'click': onChartClick }}
+          />
         </div>
       )}
     </div>

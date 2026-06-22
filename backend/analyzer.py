@@ -8,7 +8,7 @@ async def get_dir_size_ws(websocket: WebSocket, start_path: str):
     Recursively calculates directory size and streams progress via WebSocket.
     """
     total_size = 0
-    tree = {"name": os.path.basename(start_path) or start_path, "value": 0, "children": []}
+    tree = {"name": os.path.basename(start_path) or start_path, "path": start_path, "value": 0, "children": []}
     
     # We will only go a few levels deep for the visualization to avoid overwhelming the frontend
     # but we will calculate the full size.
@@ -52,7 +52,7 @@ async def get_dir_size_ws(websocket: WebSocket, start_path: str):
         children.sort(key=lambda x: x["value"], reverse=True)
         children = children[:10]
 
-        return {"name": os.path.basename(path), "value": node_size, "children": children}
+        return {"name": os.path.basename(path) or path, "path": path, "value": node_size, "children": children}
 
     # Start the scan
     await websocket.send_json({"type": "status", "message": f"Scanning {start_path}..."})
