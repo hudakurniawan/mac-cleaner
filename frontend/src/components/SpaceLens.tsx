@@ -7,6 +7,7 @@ const SpaceLens: React.FC = () => {
   const [scannedBytes, setScannedBytes] = useState<number>(0);
   const [scanPath, setScanPath] = useState<string>('~/Documents');
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [isBrowsing, setIsBrowsing] = useState<boolean>(false);
   const ws = useRef<WebSocket | null>(null);
 
   const startScan = () => {
@@ -59,6 +60,21 @@ const SpaceLens: React.FC = () => {
       if (ws.current) ws.current.close();
     };
   }, []);
+
+  const handleBrowse = async () => {
+    setIsBrowsing(true);
+    try {
+      const response = await fetch('/api/browse-folder');
+      const result = await response.json();
+      if (result.status === 'success' && result.path) {
+        setScanPath(result.path);
+      }
+    } catch (error) {
+      console.error('Failed to browse folder', error);
+    } finally {
+      setIsBrowsing(false);
+    }
+  };
 
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
@@ -133,6 +149,13 @@ const SpaceLens: React.FC = () => {
           placeholder="Path to scan (e.g., ~/Downloads or /Applications)"
           style={{ flex: 1, padding: '10px', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', color: 'white', border: '1px solid rgba(255,255,255,0.2)' }}
         />
+        <button 
+          onClick={handleBrowse}
+          disabled={isBrowsing}
+          style={{ padding: '10px 15px', borderRadius: '8px', background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', cursor: isBrowsing ? 'wait' : 'pointer' }}
+        >
+          {isBrowsing ? '...' : 'Browse...'}
+        </button>
         <button 
           onClick={startScan}
           style={{ padding: '10px 20px', borderRadius: '8px', background: '#3b82f6', color: 'white', border: 'none', cursor: 'pointer' }}

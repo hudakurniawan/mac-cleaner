@@ -3,6 +3,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
+import subprocess
 
 app = FastAPI(title="SmartClean macOS")
 
@@ -42,6 +43,20 @@ def delete_files(request: DeleteRequest):
     try:
         results = delete_items(request.items)
         return {"status": "success", "results": results}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/browse-folder")
+def browse_folder():
+    try:
+        # Use macOS native folder picker via AppleScript
+        script = 'POSIX path of (choose folder with prompt "Select a folder to scan:")'
+        result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+        if result.returncode == 0:
+            path = result.stdout.strip()
+            return {"status": "success", "path": path}
+        else:
+            return {"status": "cancelled", "message": "User cancelled"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
