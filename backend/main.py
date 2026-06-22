@@ -1,0 +1,42 @@
+from fastapi import FastAPI, WebSocket
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+import os
+
+app = FastAPI(title="SmartClean macOS")
+
+# Enable CORS for local development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# API Routes
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok", "version": "2.0.0"}
+
+# Serve static frontend (Vite build)
+frontend_dist = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+
+# We mount the static files, but handle the root route explicitly to return index.html
+if os.path.exists(frontend_dist):
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        # Serve specific files if they exist
+        file_path = os.path.join(frontend_dist, full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        
+        # Fallback to index.html for SPA routing
+        return FileResponse(os.path.join(frontend_dist, "index.html"))
+else:
+    @app.get("/")
+    def no_frontend():
+        return {"error": "Frontend build not found. Please run 'npm run build' in the frontend directory."}
