@@ -18,6 +18,7 @@ app.add_middleware(
 # API Routes
 from backend.scanner import get_installed_apps, find_app_files
 from backend.deleter import delete_items
+from backend.analyzer import get_dir_size_ws
 from pydantic import BaseModel
 from typing import List
 
@@ -43,6 +44,14 @@ def delete_files(request: DeleteRequest):
         return {"status": "success", "results": results}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+@app.websocket("/ws/analyze")
+async def websocket_analyze(websocket: WebSocket):
+    await websocket.accept()
+    data = await websocket.receive_json()
+    start_path = data.get("path", os.path.expanduser("~"))
+    await get_dir_size_ws(websocket, start_path)
+    await websocket.close()
 
 # Serve static frontend (Vite build)
 frontend_dist = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
