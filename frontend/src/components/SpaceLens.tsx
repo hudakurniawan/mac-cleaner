@@ -92,12 +92,15 @@ const SpaceLens: React.FC = () => {
       subtextStyle: { align: 'center' }
     },
     series: {
-      type: 'sunburst',
+      type: 'treemap',
       data: data ? [data] : [],
-      radius: [0, '90%'],
+      roam: false,
+      nodeClick: false, // We handle clicks manually
+      breadcrumb: { show: false },
       label: {
-        rotate: 'radial',
-        formatter: '{b}'
+        show: true,
+        formatter: '{b}\n{c} bytes',
+        overflow: 'truncate'
       },
       emphasis: {
         focus: 'ancestor'
