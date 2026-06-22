@@ -16,7 +16,8 @@ const SpaceLens: React.FC = () => {
         ws.current.close();
     }
 
-    ws.current = new WebSocket('ws://127.0.0.1:8000/ws/analyze');
+    const wsUrl = `ws://${window.location.host}/ws/analyze`;
+    ws.current = new WebSocket(wsUrl);
 
     ws.current.onopen = () => {
       setStatus('Connected, starting scan...');

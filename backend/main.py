@@ -50,6 +50,7 @@ async def websocket_analyze(websocket: WebSocket):
     await websocket.accept()
     data = await websocket.receive_json()
     start_path = data.get("path", os.path.expanduser("~"))
+    start_path = os.path.expanduser(start_path)
     await get_dir_size_ws(websocket, start_path)
     await websocket.close()
 
