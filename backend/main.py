@@ -16,9 +16,33 @@ app.add_middleware(
 )
 
 # API Routes
+from backend.scanner import get_installed_apps, find_app_files
+from backend.deleter import delete_items
+from pydantic import BaseModel
+from typing import List
+
+class DeleteRequest(BaseModel):
+    items: List[str]
+
 @app.get("/api/health")
 def health_check():
     return {"status": "ok", "version": "2.0.0"}
+
+@app.get("/api/apps")
+def list_apps():
+    return {"apps": get_installed_apps()}
+
+@app.get("/api/scan/{app_name}")
+def scan_app(app_name: str):
+    return {"results": find_app_files(app_name)}
+
+@app.post("/api/delete")
+def delete_files(request: DeleteRequest):
+    try:
+        results = delete_items(request.items)
+        return {"status": "success", "results": results}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 # Serve static frontend (Vite build)
 frontend_dist = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
