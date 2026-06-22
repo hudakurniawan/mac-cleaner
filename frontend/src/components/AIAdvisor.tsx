@@ -92,7 +92,7 @@ const AIAdvisor: React.FC = () => {
       <div style={{ marginTop: '20px', padding: '15px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', fontSize: '0.9em' }}>
         <strong>CLI Agent Instructions:</strong> If you are using an agent like Antigravity or Cursor, instruct it to:
         <br/> <code>curl http://127.0.0.1:8000/api/apps</code> to list apps, then 
-        <br/> <code>curl -X POST http://127.0.0.1:8000/api/delete -H "Content-Type: application/json" -d '{{"items":["/path/to/delete"]}}'</code> to safely delete.
+        <br/> <code>curl -X POST http://127.0.0.1:8000/api/delete -H "Content-Type: application/json" -d '&#123;"items":["/path/to/delete"]&#125;'</code> to safely delete.
       </div>
     </div>
   );

@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import './App.css'
 import SpaceLens from './components/SpaceLens'
 import AIAdvisor from './components/AIAdvisor'

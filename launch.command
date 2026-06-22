@@ -4,17 +4,18 @@
 
 cd "$(dirname "$0")"
 
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 echo "Checking environment..."
 if ! command -v uv &> /dev/null; then
     echo "uv is not installed. Installing..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
-    export PATH="$HOME/.cargo/bin:$PATH"
+    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 fi
 
 echo "Setting up Python environment..."
-uv venv
+uv venv --allow-existing
 source .venv/bin/activate
-uv pip install fastapi uvicorn websockets
+uv pip install fastapi uvicorn websockets send2trash
 
 echo "Building Frontend..."
 cd frontend
@@ -22,8 +23,7 @@ npm run build
 cd ..
 
 echo "Starting Backend..."
-cd backend
-python3 -m uvicorn main:app --host 127.0.0.1 --port 8000 &
+python3 -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 &
 BACKEND_PID=$!
 
 echo "Backend started at PID $BACKEND_PID"
